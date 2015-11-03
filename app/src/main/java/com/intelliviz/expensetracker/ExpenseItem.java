@@ -4,27 +4,31 @@ package com.intelliviz.expensetracker;
  * Created by edm on 10/13/2015.
  */
 public class ExpenseItem {
-    private String mCategory;
-    private String mAmount;
+    private long mExpenseId;
+    private long mCategoryId;
+    private long mMonthId;
+    private float mAmount;
 
-    public ExpenseItem(String category, String amount) {
-        mCategory = category;
+    public ExpenseItem(long expenseId, long categoryId, long monthId, float amount) {
+        mExpenseId = expenseId;
+        mCategoryId = categoryId;
+        mMonthId = monthId;
         mAmount = amount;
     }
 
-    public String getCategory() {
-        return mCategory;
+    public long getExpenseId() {
+        return mExpenseId;
     }
 
-    public void setCategory(String category) {
-        mCategory = category;
+    public long getMonthId() {
+        return mMonthId;
     }
 
-    public String getAmount() {
+    public long getCategoryId() {
+        return mCategoryId;
+    }
+
+    public float getAmount() {
         return mAmount;
-    }
-
-    public void setAmount(String amount) {
-        mAmount = amount;
     }
 }

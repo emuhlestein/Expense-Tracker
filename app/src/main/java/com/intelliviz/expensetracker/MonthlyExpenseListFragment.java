@@ -31,6 +31,7 @@ import java.text.DateFormatSymbols;
 import java.text.NumberFormat;
 import java.util.Calendar;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -46,17 +47,17 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
     private static final int EXPENSE_ITEM_LOADER = 0;
     private ExpenseListCursorAdapter mAdapter;
     private ListView mExpenseList;
-    private int mCurrentMonth;
-    private int mCurrentYear;
-    private long mCurrentMonthId = -1;
     private long mCategoryVersionId;
     private long mExpenseItemId;
+    private Month mCurrentMonth;
+    private CategoryVersion mCategoryVersion;
     private String mDialogName;
     private TextView mCurrentDate;
     private TextView mTotalExpenseText;
     private TextView mTotalIncomeText;
     private TextView mDifferenceText;
     private Map<Long, String> mCategoryMap;
+    private GestureDetector mGestureDetector;
 
 
     public static MonthlyExpenseListFragment newInstance() {
@@ -110,15 +111,22 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
 
         mCurrentDate = (TextView)view.findViewById(R.id.currentMonth);
 
-        mCurrentMonth = QueryPreferences.getCurrentMonth(getActivity());
-        mCurrentYear = QueryPreferences.getCurrentYear(getActivity());
-        if(mCurrentMonth == -1 || mCurrentYear == -1) {
+        int month = QueryPreferences.getCurrentMonth(getActivity());
+        int year = QueryPreferences.getCurrentYear(getActivity());
+        if(month == -1 || year == -1) {
             Calendar calendar = Calendar.getInstance();
-            mCurrentMonth = calendar.get(Calendar.MONTH);
-            mCurrentYear = calendar.get(Calendar.YEAR);
+            month = calendar.get(Calendar.MONTH);
+            year = calendar.get(Calendar.YEAR);
         }
 
-        mCurrentDate.setText(getMonth(mCurrentMonth) + ", " + mCurrentYear);
+        mCurrentMonth = ExpenseListProviderHelper.getMonth(getActivity(), month, year);
+        if(mCurrentMonth == null) {
+            mCurrentMonth = ExpenseListProviderHelper.addMonth(getActivity(), month, year);
+        }
+
+
+        mCategoryVersion = ExpenseListProviderHelper.getCategoryVersion(getActivity());
+        checkCurrentMonth();
 
         mExpenseList = (ListView)view.findViewById(R.id.expenseList);
         mAdapter = new ExpenseListCursorAdapter(getActivity(), null);
@@ -141,7 +149,7 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
             @Override
             public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
                 Adapter adapter = mExpenseList.getAdapter();
-                switch(item.getItemId()) {
+                switch (item.getItemId()) {
                     case R.id.menu_item_delete:
                         long id;
                         for (int i = adapter.getCount() - 1; i >= 0; i--) {
@@ -157,7 +165,7 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
                         Cursor cursor = null;
                         for (int i = adapter.getCount() - 1; i >= 0; i--) {
                             if (mExpenseList.isItemChecked(i)) {
-                                cursor = (Cursor)adapter.getItem(i);
+                                cursor = (Cursor) adapter.getItem(i);
                                 break;
                             }
                         }
@@ -193,14 +201,21 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
             }
         });
 
-        mCurrentMonthId = getCurrentMonthId();
-        if(mCurrentMonthId == -1) {
-            addCurrentMonth();
-        }
-
         getLoaderManager().initLoader(EXPENSE_ITEM_LOADER, null, this);
 
-        updateAmounts();
+        mGestureDetector = new GestureDetector(getActivity(), new SwipeGestureDetector());
+
+        view.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+               if(mGestureDetector.onTouchEvent(event)) {
+                   return true;
+               }
+                return false;
+            }
+        });
+
+        updateUI();
 
         return view;
     }
@@ -230,7 +245,7 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
     public Loader onCreateLoader(int loaderId, Bundle args) {
         Loader<Cursor> loader;
         Uri uri = Uri.withAppendedPath(ExpenseListContract.ExpenseItemEntry.CONTENT_URI, ExpenseListContract.PATH_MONTH);
-        uri = Uri.withAppendedPath(uri, "" + mCurrentMonthId);
+        uri = Uri.withAppendedPath(uri, "" + mCurrentMonth.getId());
         switch (loaderId) {
             case EXPENSE_ITEM_LOADER:
                 loader = new CursorLoader(getActivity(),
@@ -355,39 +370,6 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
         cursor.close();
     }
 
-    private long getCurrentMonthId() {
-        long id = -1;
-        String[] projection = new String[]{
-                ExpenseListContract.MonthEntry.TABLE_NAME + "." + ExpenseListContract.MonthEntry._ID,
-                ExpenseListContract.MonthEntry.COLUMN_MONTH,
-                ExpenseListContract.MonthEntry.COLUMN_YEAR};
-        String selection = ExpenseListContract.MonthEntry.TABLE_NAME + "." +
-                ExpenseListContract.MonthEntry.COLUMN_MONTH + " = ? AND " +
-                ExpenseListContract.MonthEntry.COLUMN_YEAR + " = ?";
-        String[] selectionArgs = new String[]{Long.toString(mCurrentMonth), Long.toString(mCurrentYear)};
-
-        Uri uri = ExpenseListContract.MonthEntry.CONTENT_URI;
-
-        Cursor cursor = getActivity().getContentResolver().query(uri, projection, selection, selectionArgs, null);
-        if(cursor.moveToFirst()) {
-            id = cursor.getLong(0);
-        }
-
-        return id;
-    }
-
-    private void addCurrentMonth() {
-        ContentValues values;
-        Uri uri;
-
-        // month does not exist; need to add it.
-        values = new ContentValues();
-        values.put(ExpenseListContract.MonthEntry.COLUMN_MONTH, mCurrentMonth);
-        values.put(ExpenseListContract.MonthEntry.COLUMN_YEAR, mCurrentYear);
-        uri = getActivity().getContentResolver().insert(ExpenseListContract.MonthEntry.CONTENT_URI, values);
-        mCurrentMonthId = Long.parseLong(uri.getLastPathSegment());
-    }
-
     private Cursor getCategory(String cat) {
         String[] projection = new String[]{
                 ExpenseListContract.CategoryEntry.TABLE_NAME + "." + ExpenseListContract.CategoryEntry._ID,
@@ -434,7 +416,7 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
         // create new expense item for new category
         values = new ContentValues();
         values.put(ExpenseListContract.ExpenseItemEntry.COLUMN_CAT_ID, catId);
-        values.put(ExpenseListContract.ExpenseItemEntry.COLUMN_MONTH_ID, mCurrentMonthId);
+        values.put(ExpenseListContract.ExpenseItemEntry.COLUMN_MONTH_ID, mCurrentMonth.getId());
         values.put(ExpenseListContract.ExpenseItemEntry.COLUMN_AMOUNT, 0);
 
         uri = getActivity().getContentResolver().insert(ExpenseListContract.ExpenseItemEntry.CONTENT_URI, values);
@@ -502,7 +484,7 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
         values.put(ExpenseListContract.MonthEntry.COLUMN_CAT_VERSION, version);
 
         Uri uri = ExpenseListContract.MonthEntry.CONTENT_URI;
-        uri = Uri.withAppendedPath(uri, "" + mCurrentMonthId);
+        uri = Uri.withAppendedPath(uri, "" + mCurrentMonth.getId());
         getActivity().getContentResolver().update(uri, values, null, null);
 
         getLoaderManager().restartLoader(EXPENSE_ITEM_LOADER, null, this);
@@ -545,12 +527,27 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
     }
 
     private void updateAmounts() {
-
         mTotalExpenseText.setText(formatCurrency(getTotalExpenses()));
+    }
 
+    private void updateDate() {
+        mCurrentDate.setText(getMonth(mCurrentMonth.getMonth()) + ", " + mCurrentMonth.getYear());
+    }
+
+    private void updateUI() {
+        updateAmounts();
+        updateDate();
+        refreshList();
     }
 
     private float getTotalExpenses() {
+        List<ExpenseItem> expenses = ExpenseListProviderHelper.getAllExpensesForMonth(getActivity(), mCurrentMonth.getId());
+
+        float amount = 0;
+        for(ExpenseItem item : expenses) {
+            amount += item.getAmount();
+        }
+        /*
         String[] projection = new String[]{
                 ExpenseListContract.ExpenseItemEntry.TABLE_NAME+"."+ExpenseListContract.ExpenseItemEntry._ID, // TODO try a projection map for this
                 ExpenseListContract.ExpenseItemEntry.COLUMN_CAT_ID,
@@ -573,7 +570,94 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
         }
 
         cursor.close();
+        */
 
         return amount;
+    }
+
+    private void checkCurrentMonth() {
+        boolean monthUpdated = false;
+        int version = mCurrentMonth.getCatVersion();
+        int catVersion = mCategoryVersion.getVersion();
+        if(version == catVersion) {
+            return;
+        }
+
+        List<Category> cats = ExpenseListProviderHelper.getAllCategories(getActivity());
+        List<ExpenseItem> expenses = ExpenseListProviderHelper.getAllExpensesForMonth(getActivity(), mCurrentMonth.getId());
+
+        boolean addToList;
+        for(Category cat : cats) {
+            addToList = true;
+            for(ExpenseItem item : expenses) {
+                if(cat.getId() == item.getCategoryId()) {
+                    addToList = false;
+                    break;
+                }
+            }
+
+            if(addToList) {
+                ExpenseListProviderHelper.addExpenseItemToMonth(getActivity(), cat.getId(), mCurrentMonth.getId());
+                monthUpdated = true;
+            }
+        }
+
+        if(monthUpdated) {
+            updateCurrentMonth(catVersion);
+        }
+    }
+
+    private boolean isInCategoryList(List<Category> cats, long catId) {
+        for(Category cat : cats) {
+            if(cat.getId() == catId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void onLeftSwipe() {
+        mCurrentMonth = ExpenseListProviderHelper.incMonth(getActivity(), mCurrentMonth);
+        checkCurrentMonth();
+        QueryPreferences.setCurrentMonth(getActivity(), mCurrentMonth.getMonth());
+        QueryPreferences.setCurrentYear(getActivity(), mCurrentMonth.getYear());
+        updateUI();
+    }
+
+    private void onRightSwipe() {
+        mCurrentMonth = ExpenseListProviderHelper.decMonth(getActivity(), mCurrentMonth);
+        checkCurrentMonth();
+        QueryPreferences.setCurrentMonth(getActivity(), mCurrentMonth.getMonth());
+        QueryPreferences.setCurrentYear(getActivity(), mCurrentMonth.getYear());
+        updateUI();
+    }
+
+    private class SwipeGestureDetector extends GestureDetector.SimpleOnGestureListener {
+        private static final int SWIPE_MAX_OFF_PATH = 200;
+        private static final int SWIPE_MIN_DISTANCE = 120;
+        private static final int SWIPE_THRESHOLD_VELOCITY = 150;
+
+        @Override
+        public boolean onDown(MotionEvent e) {
+            return true;
+        }
+
+        @Override
+        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+            float diffAbs = Math.abs(e1.getY() - e2.getY());
+            float diff = e1.getX() - e2.getX();
+
+            if(diffAbs > SWIPE_MAX_OFF_PATH) {
+                return false;
+            }
+
+            if(diff > SWIPE_MIN_DISTANCE && Math.abs(velocityX) > SWIPE_THRESHOLD_VELOCITY) {
+                onLeftSwipe();
+            } else if(-diff > SWIPE_MIN_DISTANCE && Math.abs(velocityX) > SWIPE_THRESHOLD_VELOCITY) {
+                onRightSwipe();
+            }
+            return super.onFling(e1, e2, velocityX, velocityY);
+        }
     }
 }
