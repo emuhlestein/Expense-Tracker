@@ -261,14 +261,30 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
 
         mAnimation = new TranslateAnimation(
                 Animation.RELATIVE_TO_PARENT,
-                1.00f,
-                Animation.RELATIVE_TO_PARENT,
                 0f,
+                Animation.RELATIVE_TO_PARENT,
+                -1.0f,
                 Animation.RELATIVE_TO_PARENT,
                 0f,
                 Animation.RELATIVE_TO_PARENT,
                 0f);
         mAnimation.setDuration(1000);
+        mAnimation.setAnimationListener(new Animation.AnimationListener() {
+            @Override
+            public void onAnimationStart(Animation animation) {
+
+            }
+
+            @Override
+            public void onAnimationEnd(Animation animation) {
+                updateUI();
+            }
+
+            @Override
+            public void onAnimationRepeat(Animation animation) {
+
+            }
+        });
 
         mReverseAnimation = new TranslateAnimation(
                 Animation.RELATIVE_TO_PARENT,
@@ -280,6 +296,22 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
                 Animation.RELATIVE_TO_PARENT,
                 0f);
         mReverseAnimation.setDuration(1000);
+        mReverseAnimation.setAnimationListener(new Animation.AnimationListener() {
+            @Override
+            public void onAnimationStart(Animation animation) {
+
+            }
+
+            @Override
+            public void onAnimationEnd(Animation animation) {
+                updateUI();
+            }
+
+            @Override
+            public void onAnimationRepeat(Animation animation) {
+
+            }
+        });
 
         mUpAnimation = new TranslateAnimation(
                 Animation.RELATIVE_TO_PARENT,
@@ -759,7 +791,6 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
         mCurrentDate.startAnimation(mAnimation);
         mExpenseList.startAnimation(mAnimation);
         mStatusArea.startAnimation(mUpAnimation);
-        updateUI();
     }
 
     private void onRightSwipe() {
@@ -781,8 +812,6 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
         mCurrentDate.startAnimation(mReverseAnimation);
         mExpenseList.startAnimation(mReverseAnimation);
         mStatusArea.startAnimation(mUpAnimation);
-
-        updateUI();
     }
 
     private class SwipeGestureDetector extends GestureDetector.SimpleOnGestureListener {
