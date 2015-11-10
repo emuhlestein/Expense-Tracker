@@ -11,6 +11,8 @@ import android.content.Loader;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.transition.Scene;
+import android.util.Log;
 import android.view.ActionMode;
 import android.view.GestureDetector;
 import android.view.LayoutInflater;
@@ -20,10 +22,14 @@ import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.Animation;
+import android.view.animation.TranslateAnimation;
 import android.widget.AbsListView;
 import android.widget.Adapter;
 import android.widget.CursorAdapter;
+import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -42,6 +48,8 @@ import java.util.Map;
 public class MonthlyExpenseListFragment extends Fragment implements LoaderManager.LoaderCallbacks<Cursor>, GestureDetector.OnGestureListener {
     private static final String DIALOG_AMOUNT = "amount";
     private static final String DIALOG_CATEGORY = "category";
+    private static final String DIALOG_MONTH = "month";
+    private static final String DIALOG_INCOME = "income";
     private static final String MONTH_KEY = "month";
     public static final int REQUEST_ITEM = 0;
     private static final int EXPENSE_ITEM_LOADER = 0;
@@ -56,8 +64,15 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
     private TextView mTotalExpenseText;
     private TextView mTotalIncomeText;
     private TextView mDifferenceText;
+    private RelativeLayout mBackgroundDiff;
+    private LinearLayout mRootView;
     private Map<Long, String> mCategoryMap;
+    private LinearLayout mStatusArea;
     private GestureDetector mGestureDetector;
+    private TranslateAnimation mAnimation;
+    private TranslateAnimation mReverseAnimation;
+    private TranslateAnimation mUpAnimation;
+    private Scene mScene;
 
 
     public static MonthlyExpenseListFragment newInstance() {
@@ -88,13 +103,27 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
+        SimpleTextDialog dialog;
         switch(item.getItemId()) {
             case R.id.action_add_category:
-                SimpleTextDialog dialog = SimpleTextDialog.newInstance("Add a category", "", "Category");
+                dialog = SimpleTextDialog.newInstance("Add a category", "", "Category", false);
                 dialog.setTargetFragment(this, REQUEST_ITEM);
                 dialog.show(getFragmentManager(), "Dial1");
                 mDialogName = DIALOG_CATEGORY;
                 return true;
+            case R.id.action_edit_income:
+                dialog = SimpleTextDialog.newInstance("Edit income for current month", formatCurrency(mCurrentMonth.getIncome().getAmount()), "Amount", true);
+                dialog.setTargetFragment(this, REQUEST_ITEM);
+                dialog.show(getFragmentManager(), "Dial1");
+                mDialogName = DIALOG_INCOME;
+                break;
+            case R.id.action_dump_income:
+                List<Income> list = ExpenseListProviderHelper.getAllIncomes(getActivity());
+
+                for(Income income : list) {
+                    Log.d("EDM", income.toString());
+                }
+                break;
         }
         return super.onOptionsItemSelected(item);
     }
@@ -105,9 +134,13 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
         // Inflate the layout for this fragment
         View view = inflater.inflate(R.layout.fragment_monthly_expense_list, container, false);
 
+        mRootView = (LinearLayout)view.findViewById(R.id.rootView);
+        mStatusArea = (LinearLayout)view.findViewById(R.id.statusArea);
+
         mTotalExpenseText = (TextView)view.findViewById(R.id.totalExpenses);
         mTotalIncomeText = (TextView)view.findViewById(R.id.totalIncome);
         mDifferenceText = (TextView)view.findViewById(R.id.difference);
+        mBackgroundDiff = (RelativeLayout)view.findViewById(R.id.backgroundDiff);
 
         mCurrentDate = (TextView)view.findViewById(R.id.currentMonth);
 
@@ -180,7 +213,7 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
                         //String cat = MonthlyExpenseListFragment.this.mCategoryMap.get(labelId);
 
                         SimpleTextDialog dialog = SimpleTextDialog.newInstance("Update the amount",
-                                formatCurrency(amount), cat);
+                                formatCurrency(amount), cat, true);
                         dialog.setTargetFragment(MonthlyExpenseListFragment.this, REQUEST_ITEM);
                         dialog.show(getFragmentManager(), "Dial1");
                         mDialogName = DIALOG_AMOUNT;
@@ -203,17 +236,61 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
 
         getLoaderManager().initLoader(EXPENSE_ITEM_LOADER, null, this);
 
+        // for swiping
         mGestureDetector = new GestureDetector(getActivity(), new SwipeGestureDetector());
-
         view.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-               if(mGestureDetector.onTouchEvent(event)) {
-                   return true;
-               }
+                if (mGestureDetector.onTouchEvent(event)) {
+                    return true;
+                }
                 return false;
             }
         });
+
+
+        mExpenseList.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (mGestureDetector.onTouchEvent(event)) {
+                    return true;
+                }
+                return false;
+            }
+        });
+
+        mAnimation = new TranslateAnimation(
+                Animation.RELATIVE_TO_PARENT,
+                1.00f,
+                Animation.RELATIVE_TO_PARENT,
+                0f,
+                Animation.RELATIVE_TO_PARENT,
+                0f,
+                Animation.RELATIVE_TO_PARENT,
+                0f);
+        mAnimation.setDuration(1000);
+
+        mReverseAnimation = new TranslateAnimation(
+                Animation.RELATIVE_TO_PARENT,
+                0f,
+                Animation.RELATIVE_TO_PARENT,
+                1.0f,
+                Animation.RELATIVE_TO_PARENT,
+                0f,
+                Animation.RELATIVE_TO_PARENT,
+                0f);
+        mReverseAnimation.setDuration(1000);
+
+        mUpAnimation = new TranslateAnimation(
+                Animation.RELATIVE_TO_PARENT,
+                0f,
+                Animation.RELATIVE_TO_PARENT,
+                0f,
+                Animation.RELATIVE_TO_PARENT,
+                1.0f,
+                Animation.RELATIVE_TO_PARENT,
+                0);
+        mUpAnimation.setDuration(1000);
 
         updateUI();
 
@@ -236,6 +313,18 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
                     String category = data.getStringExtra(SimpleTextDialog.EXTRA_TEXT);
                     Toast.makeText(getActivity(), "Got it: " + category, Toast.LENGTH_SHORT).show();
                     addCategory(formatText(category));
+                } else if(mDialogName.equals(DIALOG_MONTH)) {
+                    mCurrentMonth = ExpenseListProviderHelper.addPrevMonth(getActivity(), mCurrentMonth);
+                    checkCurrentMonth();
+                    updateUI();
+                } else if(mDialogName.equals(DIALOG_INCOME)) {
+                    String amount = data.getStringExtra(SimpleTextDialog.EXTRA_TEXT);
+                    if(amount.charAt(0) == '$') {
+                        amount = amount.substring(1);
+                    }
+                    float amt = Float.parseFloat(amount);
+                    updateIncome(amt);
+                    updateUI();
                 }
             }
         }
@@ -307,6 +396,10 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
     @Override
     public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
         return false;
+    }
+
+    public void slideTransition(View view) {
+
     }
 
     private class ExpenseListCursorAdapter extends CursorAdapter {
@@ -501,6 +594,22 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
         getLoaderManager().restartLoader(EXPENSE_ITEM_LOADER, null, this);
     }
 
+    private void updateIncome(float amount) {
+        ContentValues values = new ContentValues();
+        values.put(ExpenseListContract.IncomeEntry.COLUMN_AMOUNT, amount);
+
+        Uri uri = ExpenseListContract.IncomeEntry.CONTENT_URI;
+        uri = Uri.withAppendedPath(uri, "" + mCurrentMonth.getIncome().getId());
+        getActivity().getContentResolver().update(uri, values, null, null);
+
+
+
+        Income income = ExpenseListProviderHelper.getIncomeForMonth(getActivity(), mCurrentMonth.getId());
+        mCurrentMonth.setIncome(income);
+
+        getLoaderManager().restartLoader(EXPENSE_ITEM_LOADER, null, this);
+    }
+
     private Uri createCatgoryVersion(int version) {
         ContentValues values = new ContentValues();
         values.put(ExpenseListContract.CategoryVersionEntry.COLUMN_VERSION, version);
@@ -527,7 +636,20 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
     }
 
     private void updateAmounts() {
-        mTotalExpenseText.setText(formatCurrency(getTotalExpenses()));
+        float total = getTotalExpenses();
+        mTotalExpenseText.setText(formatCurrency(total));
+        mTotalIncomeText.setText(formatCurrency(mCurrentMonth.getIncome().getAmount()));
+
+
+        float diff = mCurrentMonth.getIncome().getAmount() - total;
+        int color;
+        if(diff < 0) {
+            color = getResources().getColor(R.color.red);
+        } else {
+            color = getResources().getColor(R.color.color_primary);
+        }
+        mBackgroundDiff.setBackgroundColor(color);
+        mDifferenceText.setText(formatCurrency(diff));
     }
 
     private void updateDate() {
@@ -579,6 +701,15 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
         boolean monthUpdated = false;
         int version = mCurrentMonth.getCatVersion();
         int catVersion = mCategoryVersion.getVersion();
+
+        // is there an income record for the current month
+        Income income = ExpenseListProviderHelper.getIncomeForMonth(getActivity(), mCurrentMonth.getId());
+        if(income == null) {
+            income = ExpenseListProviderHelper.addIncome(getActivity(), mCurrentMonth.getId(), 0);
+        }
+
+        mCurrentMonth.setIncome(income);
+
         if(version == catVersion) {
             return;
         }
@@ -605,6 +736,9 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
         if(monthUpdated) {
             updateCurrentMonth(catVersion);
         }
+
+
+        mCurrentMonth.setIncome(income);
     }
 
     private boolean isInCategoryList(List<Category> cats, long catId) {
@@ -622,14 +756,32 @@ public class MonthlyExpenseListFragment extends Fragment implements LoaderManage
         checkCurrentMonth();
         QueryPreferences.setCurrentMonth(getActivity(), mCurrentMonth.getMonth());
         QueryPreferences.setCurrentYear(getActivity(), mCurrentMonth.getYear());
+        mCurrentDate.startAnimation(mAnimation);
+        mExpenseList.startAnimation(mAnimation);
+        mStatusArea.startAnimation(mUpAnimation);
         updateUI();
     }
 
     private void onRightSwipe() {
-        mCurrentMonth = ExpenseListProviderHelper.decMonth(getActivity(), mCurrentMonth);
+        Month month;
+        month = ExpenseListProviderHelper.decMonth(getActivity(), mCurrentMonth);
+        if(month.getMonth() == mCurrentMonth.getMonth()) {
+            month = ExpenseListProviderHelper.decMonth(mCurrentMonth);
+            SimpleButtonDialog dialog = SimpleButtonDialog.newInstance("Add a new month", getMonth(month.getMonth()) + " does not exist, would you like to add it");
+            dialog.setTargetFragment(MonthlyExpenseListFragment.this, REQUEST_ITEM);
+            dialog.show(getFragmentManager(), "Dial1");
+            mDialogName = DIALOG_MONTH;
+        } else {
+            mCurrentMonth = month;
+        }
         checkCurrentMonth();
         QueryPreferences.setCurrentMonth(getActivity(), mCurrentMonth.getMonth());
         QueryPreferences.setCurrentYear(getActivity(), mCurrentMonth.getYear());
+
+        mCurrentDate.startAnimation(mReverseAnimation);
+        mExpenseList.startAnimation(mReverseAnimation);
+        mStatusArea.startAnimation(mUpAnimation);
+
         updateUI();
     }
 

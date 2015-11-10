@@ -16,6 +16,7 @@ public final class ExpenseListContract {
     public static final String PATH_CAT_VER = "cat_version";
     public static final String PATH_MONTH = "month";
     public static final String PATH_EXPENSE_ITEM = "expense_item";
+    public static final String PATH_INCOME = "income";
 
     public static final class CategoryEntry implements BaseColumns {
         public static final Uri CONTENT_URI = BASE_CONTENT_URI.buildUpon().appendPath(PATH_CATEGORY).build();
@@ -64,6 +65,20 @@ public final class ExpenseListContract {
                 ContentResolver.CURSOR_ITEM_BASE_TYPE + "/" + CONTENT_AUTHORITY + "/" + PATH_EXPENSE_ITEM;
 
         public static final String TABLE_NAME = PATH_EXPENSE_ITEM;
+        public static final String COLUMN_MONTH_ID = "month_id";
+        public static final String COLUMN_CAT_ID = "cat_id";
+        public static final String COLUMN_AMOUNT = "amount";
+    }
+
+    public static final class IncomeEntry implements BaseColumns {
+        public static final Uri CONTENT_URI = BASE_CONTENT_URI.buildUpon().appendPath(PATH_INCOME).build();
+
+        public static final String CONTENT_TYPE =
+                ContentResolver.CURSOR_DIR_BASE_TYPE + "/" + CONTENT_AUTHORITY + "/" + PATH_INCOME;
+        public static final String CONTENT_ITEM_TYPE =
+                ContentResolver.CURSOR_ITEM_BASE_TYPE + "/" + CONTENT_AUTHORITY + "/" + PATH_INCOME;
+
+        public static final String TABLE_NAME = PATH_INCOME;
         public static final String COLUMN_MONTH_ID = "month_id";
         public static final String COLUMN_CAT_ID = "cat_id";
         public static final String COLUMN_AMOUNT = "amount";

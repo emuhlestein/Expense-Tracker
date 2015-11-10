@@ -12,4 +12,6 @@
     <string name="delete_expense_item">Delete</string>
     <string name="edit_expense_item">Edit</string>
     <string name="add_expense_item">Add</string>
+    <string name="action_edit_income">Edit Income</string>
+    <string name="action_dump_income">Dump Income</string>
 </resources>

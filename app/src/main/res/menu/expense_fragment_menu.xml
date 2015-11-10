@@ -5,4 +5,12 @@
           android:icon="@android:drawable/ic_menu_add"
           android:title="@string/action_add_category"
           app:showAsAction="ifRoom|withText"/>
+    <item
+        android:id="@+id/action_edit_income"
+        android:title="@string/action_edit_income"
+        app:showAsAction="never"/>
+    <item
+        android:id="@+id/action_dump_income"
+        android:title="@string/action_dump_income"
+        app:showAsAction="never"/>
 </menu>

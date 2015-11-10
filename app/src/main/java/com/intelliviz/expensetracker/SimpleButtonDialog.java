@@ -1,49 +1,40 @@
 package com.intelliviz.expensetracker;
 
 import android.app.Activity;
+import android.app.DialogFragment;
 import android.content.Intent;
 import android.os.Bundle;
-import android.app.DialogFragment;
-import android.text.InputType;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.TextView;
 
 /**
  * Created by edm on 6/13/2015.
  */
-public class SimpleTextDialog extends DialogFragment {
+public class SimpleButtonDialog extends DialogFragment {
     public static final String EXTRA_LABEL = "com.intelliviz.SimpleTextDialog.label";
-    public static final String EXTRA_TEXT = "com.intelliviz.SimpleTextDialog.text";
     public static final String EXTRA_TITLE = "com.intelliviz.SimpleTextDialog.title";
-    public static final String EXTRA_NUMERIC = "com.intelliviz.SimpleTextDialog.numeric";
     public static final int FRAG_ID = 1;
-    private boolean mIsNumeric;
     private String mLabel;
-    private String mText;
     private String mTitle;
     private TextView mLabelText;
-    private EditText mEditText;
     private OnClickListener mListener;
 
     public interface OnClickListener {
         public void onClickOk(String text);
     }
 
-    public SimpleTextDialog() {
+    public SimpleButtonDialog() {
     }
 
-    public static SimpleTextDialog newInstance(String title, String text, String label, boolean numberic) {
-        SimpleTextDialog fragment = new SimpleTextDialog();
+    public static SimpleButtonDialog newInstance(String title, String label) {
+        SimpleButtonDialog fragment = new SimpleButtonDialog();
 
         Bundle args = new Bundle();
         args.putSerializable(EXTRA_LABEL, label);
-        args.putSerializable(EXTRA_TEXT, text);
         args.putSerializable(EXTRA_TITLE, title);
-        args.putBoolean(EXTRA_NUMERIC, numberic);
         fragment.setArguments(args);
 
         return fragment;
@@ -52,10 +43,8 @@ public class SimpleTextDialog extends DialogFragment {
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         // Inflate the layout for this fragment
-        View view = inflater.inflate(R.layout.simple_text_layout, container, false);
+        View view = inflater.inflate(R.layout.simple_button_layout, container, false);
         mLabelText = (TextView) view.findViewById(R.id.editTextLabel);
-        mEditText = (EditText) view.findViewById(R.id.editTextView);
-
 
         Button okButton = (Button) view.findViewById(R.id.okSimpleButton);
         Button cancelButton = (Button) view.findViewById(R.id.cancelSimpleButton);
@@ -63,26 +52,20 @@ public class SimpleTextDialog extends DialogFragment {
         okButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                String text = mEditText.getText().toString();
-                SimpleTextDialog.this.dismiss();
-                sendResult(Activity.RESULT_OK, text);
+                SimpleButtonDialog.this.dismiss();
+                sendResult(Activity.RESULT_OK);
             }
         });
 
         cancelButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                SimpleTextDialog.this.dismiss();
-                sendResult(Activity.RESULT_CANCELED, "");
+                SimpleButtonDialog.this.dismiss();
+                sendResult(Activity.RESULT_CANCELED);
             }
         });
 
-        if(mIsNumeric) {
-            setNumeric();
-        }
-
         mLabelText.setText(mLabel);
-        mEditText.setText(mText);
         getDialog().setTitle(mTitle);
         setCancelable(false);
 
@@ -99,9 +82,7 @@ public class SimpleTextDialog extends DialogFragment {
         super.onCreate(savedInstanceState);
 
         mLabel = (String) getArguments().getSerializable(EXTRA_LABEL);
-        mText = (String) getArguments().getSerializable(EXTRA_TEXT);
         mTitle = (String) getArguments().getSerializable(EXTRA_TITLE);
-        mIsNumeric = getArguments().getBoolean(EXTRA_NUMERIC);
     }
 
     @Override
@@ -110,17 +91,12 @@ public class SimpleTextDialog extends DialogFragment {
         mListener = null;
     }
 
-    private void setNumeric() {
-        mEditText.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-    }
-
-    private void sendResult(int resultCode, String data) {
+    private void sendResult(int resultCode) {
         if (getTargetFragment() == null) {
             return;
         }
 
         Intent i = new Intent();
-        i.putExtra(EXTRA_TEXT, data);
 
         getActivity().sendBroadcast(i);
         getTargetFragment().onActivityResult(getTargetRequestCode(), resultCode, i);

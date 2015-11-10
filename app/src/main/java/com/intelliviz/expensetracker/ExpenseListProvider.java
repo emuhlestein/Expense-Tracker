@@ -11,6 +11,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteQueryBuilder;
 import android.net.Uri;
 import android.text.TextUtils;
+import android.util.Log;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -22,7 +23,8 @@ import java.util.HashSet;
 public class ExpenseListProvider extends ContentProvider {
     private SqliteHelper mSqliteHelper;
     private static final String DBASE_NAME = "expenses";
-    private static final int DBASE_VERSION = 3;
+    private static final int DBASE_VERSION = 6;
+    private static final int DBASE_ADD_INCOME_TABLE = 6;
 
     private static final int CATEGORY_LIST = 101;
     private static final int CATEGORY_ID = 102;
@@ -33,12 +35,16 @@ public class ExpenseListProvider extends ContentProvider {
     private static final int EXPENSE_ITEM_LIST = 301;
     private static final int EXPENSE_ITEM_ID = 302;
     private static final int EXPENSE_MONTH_ID = 303;
+    private static final int INCOME_LIST = 401;
+    private static final int INCOME_ID = 402;
+    private static final int INCOME_MONTH_ID = 403;
 
     private static UriMatcher sUriMatcher;
     private static HashSet<String> sProjectionCategoryMap;
     private static HashSet<String> sProjectionCategoryVersionMap;
     private static HashSet<String> sProjectionMonthMap;
     private static HashMap<String, String> sProjectionExpenseItemMap;
+    private static HashMap<String, String> sProjectionIncomeMap;
 
     //private static final SQLiteQueryBuilder sMonthlyExpensesQueryBuilder;
 
@@ -58,6 +64,15 @@ public class ExpenseListProvider extends ContentProvider {
             ExpenseListContract.CategoryEntry._ID + " = " +
             ExpenseListContract.ExpenseItemEntry.TABLE_NAME + "." +
             ExpenseListContract.ExpenseItemEntry.COLUMN_CAT_ID;
+
+    private static final String QUERY_TABLES_FOR_INCOME =
+            ExpenseListContract.MonthEntry.TABLE_NAME +
+                    " INNER JOIN " +
+                    ExpenseListContract.IncomeEntry.TABLE_NAME + " ON " +
+                    ExpenseListContract.MonthEntry.TABLE_NAME + "." +
+                    ExpenseListContract.MonthEntry._ID + " = " +
+                    ExpenseListContract.IncomeEntry.TABLE_NAME + "." +
+                    ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID;
 
     static {
         sUriMatcher = new UriMatcher((UriMatcher.NO_MATCH));
@@ -90,6 +105,16 @@ public class ExpenseListProvider extends ContentProvider {
         sUriMatcher.addURI(ExpenseListContract.CONTENT_AUTHORITY,
                 ExpenseListContract.PATH_EXPENSE_ITEM + "/" + ExpenseListContract.PATH_MONTH + "/#/", EXPENSE_MONTH_ID);
 
+        // all incomes
+        sUriMatcher.addURI(ExpenseListContract.CONTENT_AUTHORITY, ExpenseListContract.PATH_INCOME, INCOME_LIST);
+
+        // a particular month
+        sUriMatcher.addURI(ExpenseListContract.CONTENT_AUTHORITY, ExpenseListContract.PATH_INCOME + "/#", INCOME_ID);
+
+        // income for particular month
+        sUriMatcher.addURI(ExpenseListContract.CONTENT_AUTHORITY,
+                ExpenseListContract.PATH_INCOME + "/" + ExpenseListContract.PATH_MONTH + "/#/", INCOME_MONTH_ID);
+
         sProjectionCategoryMap = new HashSet<String>();
         sProjectionCategoryMap.add(ExpenseListContract.CategoryEntry._ID);
         sProjectionCategoryMap.add(ExpenseListContract.CategoryEntry.COLUMN_CATEGORY_NAME);
@@ -105,6 +130,11 @@ public class ExpenseListProvider extends ContentProvider {
         sProjectionExpenseItemMap.put(ExpenseListContract.ExpenseItemEntry.COLUMN_CAT_ID, ExpenseListContract.ExpenseItemEntry.COLUMN_CAT_ID);
         sProjectionExpenseItemMap.put(ExpenseListContract.ExpenseItemEntry.COLUMN_MONTH_ID, ExpenseListContract.ExpenseItemEntry.COLUMN_MONTH_ID);
         sProjectionExpenseItemMap.put(ExpenseListContract.ExpenseItemEntry.COLUMN_AMOUNT, ExpenseListContract.ExpenseItemEntry.COLUMN_AMOUNT);
+        sProjectionIncomeMap = new HashMap<String, String>();
+        sProjectionExpenseItemMap.put(ExpenseListContract.IncomeEntry._ID, ExpenseListContract.IncomeEntry.TABLE_NAME+"."+ExpenseListContract.IncomeEntry._ID);
+        sProjectionExpenseItemMap.put(ExpenseListContract.IncomeEntry.COLUMN_CAT_ID, ExpenseListContract.IncomeEntry.COLUMN_CAT_ID);
+        sProjectionExpenseItemMap.put(ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID, ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID);
+        sProjectionExpenseItemMap.put(ExpenseListContract.IncomeEntry.COLUMN_AMOUNT, ExpenseListContract.IncomeEntry.COLUMN_AMOUNT);
     }
 
     @Override
@@ -133,6 +163,10 @@ public class ExpenseListProvider extends ContentProvider {
                 return ExpenseListContract.ExpenseItemEntry.CONTENT_TYPE;
             case EXPENSE_ITEM_ID:
                 return ExpenseListContract.ExpenseItemEntry.CONTENT_ITEM_TYPE;
+            case INCOME_LIST:
+                return ExpenseListContract.IncomeEntry.CONTENT_TYPE;
+            case INCOME_ID:
+                return ExpenseListContract.IncomeEntry.CONTENT_ITEM_TYPE;
             default:
                 throw new IllegalArgumentException("Unknown URI " + uri);
         }
@@ -185,6 +219,19 @@ public class ExpenseListProvider extends ContentProvider {
             case EXPENSE_MONTH_ID:
                 // get all expenses for a particular month: expense/month/#
                 return getMonthlyExpenseItems(uri, projection, selection, selectionArgs, sortOrder);
+            case INCOME_LIST:
+                // get all income for specified month: "income/"
+                sqLiteQueryBuilder.setTables(ExpenseListContract.IncomeEntry.TABLE_NAME);
+                break;
+            case INCOME_ID:
+                // get a particular expense: "income/#"
+                sqLiteQueryBuilder.setTables(ExpenseListContract.IncomeEntry.TABLE_NAME);
+                sqLiteQueryBuilder.appendWhere(ExpenseListContract.IncomeEntry._ID +
+                        "=" + uri.getLastPathSegment());
+                break;
+            case INCOME_MONTH_ID:
+                // get income for a particular month: income/month/#
+                return getMonthlyIncome(uri, projection, selection, selectionArgs, sortOrder);
             default:
                 throw new IllegalArgumentException("Unknown URI " + uri);
         }
@@ -250,6 +297,18 @@ public class ExpenseListProvider extends ContentProvider {
                     throw new android.database.SQLException("Failed to insert row into " + uri);
                 }
                 break;
+            case INCOME_LIST:
+                db = mSqliteHelper.getWritableDatabase();
+
+                // The second parameter will allow an empty row to be inserted. If it was null, then no row
+                // can be inserted if values is empty.
+                rowId = db.insert(ExpenseListContract.IncomeEntry.TABLE_NAME, null, values);
+                if (rowId > -1) {
+                    returnUri = ContentUris.withAppendedId(uri, rowId);
+                } else {
+                    throw new android.database.SQLException("Failed to insert row into " + uri);
+                }
+                break;
             default:
                 throw new IllegalArgumentException("Unknown URI " + uri);
         }
@@ -296,6 +355,14 @@ public class ExpenseListProvider extends ContentProvider {
                 id = uri.getLastPathSegment();
                 rowsDeleted = db.delete(ExpenseListContract.ExpenseItemEntry.TABLE_NAME,
                         ExpenseListContract.ExpenseItemEntry._ID + "=" + id, null);
+                break;
+            case INCOME_LIST:
+                rowsDeleted = db.delete(ExpenseListContract.IncomeEntry.TABLE_NAME, selection, selectionArgs);
+                break;
+            case INCOME_ID:
+                id = uri.getLastPathSegment();
+                rowsDeleted = db.delete(ExpenseListContract.IncomeEntry.TABLE_NAME,
+                        ExpenseListContract.IncomeEntry._ID + "=" + id, null);
                 break;
             default:
                 throw new IllegalArgumentException("Unknown URI " + uri);
@@ -380,6 +447,22 @@ public class ExpenseListProvider extends ContentProvider {
                             selectionArgs);
                 }
                 break;
+            case INCOME_ID:
+                id = uri.getLastPathSegment();
+                if (TextUtils.isEmpty(selection)) {
+                    rowsUpdated = db.update(ExpenseListContract.IncomeEntry.TABLE_NAME,
+                            values,
+                            ExpenseListContract.IncomeEntry._ID + "=?",
+                            new String[]{id});
+                } else {
+                    rowsUpdated = db.update(ExpenseListContract.IncomeEntry.TABLE_NAME,
+                            values,
+                            ExpenseListContract.IncomeEntry._ID + "=" + id
+                                    + " and "
+                                    + selection,
+                            selectionArgs);
+                }
+                break;
             default:
                 throw new IllegalArgumentException("Unknown URI " + uri);
         }
@@ -429,15 +512,46 @@ public class ExpenseListProvider extends ContentProvider {
                     ExpenseListContract.ExpenseItemEntry.COLUMN_AMOUNT + " REAL);";
 
             db.execSQL(sql);
+
+            // create the income table
+            sql = "CREATE TABLE " + ExpenseListContract.IncomeEntry.TABLE_NAME +
+                    " ( " + ExpenseListContract.IncomeEntry._ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                    ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID + " INTEGER, " +
+                    ExpenseListContract.IncomeEntry.COLUMN_CAT_ID + " INTEGER, " +
+                    ExpenseListContract.IncomeEntry.COLUMN_AMOUNT + " REAL);";
+
+            db.execSQL(sql);
         }
 
         @Override
         public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+
+            if(oldVersion < DBASE_ADD_INCOME_TABLE) {
+                db.execSQL("DROP TABLE IF EXISTS " + ExpenseListContract.IncomeEntry.TABLE_NAME);
+
+                // need to add income table
+                String sql = "CREATE TABLE " + ExpenseListContract.IncomeEntry.TABLE_NAME +
+                        " ( " + ExpenseListContract.IncomeEntry._ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID + " INTEGER, " +
+                        ExpenseListContract.IncomeEntry.COLUMN_CAT_ID + " INTEGER, " +
+                        ExpenseListContract.IncomeEntry.COLUMN_AMOUNT + " REAL);";
+
+                db.execSQL(sql);
+            }
+
+            if(oldVersion == newVersion) {
+                Log.d("EDM", "upgrading...");
+            } else {
+                Log.d("EDM", "testing...");
+            }
+            /*
             db.execSQL("DROP TABLE IF EXISTS " + ExpenseListContract.CategoryEntry.TABLE_NAME);
             db.execSQL("DROP TABLE IF EXISTS " + ExpenseListContract.MonthEntry.TABLE_NAME);
             db.execSQL("DROP TABLE IF EXISTS " + ExpenseListContract.ExpenseItemEntry.TABLE_NAME);
             db.execSQL("DROP TABLE IF EXISTS " + ExpenseListContract.CategoryVersionEntry.TABLE_NAME);
+            db.execSQL("DROP TABLE IF EXISTS " + ExpenseListContract.IncomeEntry.TABLE_NAME);
             onCreate(db);
+            */
         }
     }
 
@@ -459,11 +573,26 @@ public class ExpenseListProvider extends ContentProvider {
                 null,
                 sortOrder);
 
-        float amount = 0;
-        cursor.moveToPosition(-1);
-        while(cursor.moveToNext()) {
-            amount += cursor.getFloat(3);
-        }
+        return cursor;
+    }
+
+    private Cursor getMonthlyIncome(
+            Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+        String monthId = uri.getLastPathSegment();
+        SQLiteQueryBuilder builder = new SQLiteQueryBuilder();
+        builder.setTables(QUERY_TABLES_FOR_INCOME);
+        //builder.setProjectionMap(sProjectionExpenseItemMap);
+
+        builder.appendWhere(ExpenseListContract.IncomeEntry.TABLE_NAME + "." +
+                ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID + " = " + monthId);
+
+        Cursor cursor = builder.query(mSqliteHelper.getReadableDatabase(),
+                projection,
+                selection,
+                selectionArgs,
+                null,
+                null,
+                sortOrder);
 
         return cursor;
     }

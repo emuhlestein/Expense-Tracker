@@ -86,7 +86,7 @@ public class ExpenseListProviderHelper {
         return expenseId;
     }
 
-    public static Month getMonth(Activity activity, int month, int year) {
+        public static Month getMonth(Activity activity, int month, int year) {
         Month newMonth = null;
         String[] projection = new String[]{
                 ExpenseListContract.MonthEntry.TABLE_NAME + "." + ExpenseListContract.MonthEntry._ID,
@@ -108,7 +108,7 @@ public class ExpenseListProviderHelper {
             int catIdx = cursor.getColumnIndex(ExpenseListContract.MonthEntry.COLUMN_CAT_VERSION);
 
             newMonth = new Month(cursor.getLong(idIdx), cursor.getInt(monthIdx),
-                                 cursor.getInt(yearIdx), cursor.getInt(catIdx));
+                    cursor.getInt(yearIdx), cursor.getInt(catIdx));
         }
 
         return newMonth;
@@ -131,6 +131,25 @@ public class ExpenseListProviderHelper {
         return newMonth;
     }
 
+    public static Month addPrevMonth(Activity activity, Month month) {
+        int monthNum = month.getMonth();
+        int year = month.getYear();
+        monthNum--;
+        if(monthNum < 0) {
+            monthNum = 11;
+            year = year - 1; // TODO should we look at a earliest year????
+        }
+
+        addMonth(activity, monthNum, year);
+
+        Month nextMonth = ExpenseListProviderHelper.getMonth(activity, monthNum, year);
+        if(nextMonth != null) {
+            return nextMonth;
+        } else {
+            return month;
+        }
+    }
+
     public static Month incMonth(Activity activity, Month month) {
         int monthNum = month.getMonth();
         int year = month.getYear();
@@ -148,16 +167,29 @@ public class ExpenseListProviderHelper {
         }
     }
 
-    public static Month decMonth(Activity activity, Month month) {
+    public static Month decMonth(Month month) { // TODO refactor
         int monthNum = month.getMonth();
         int year = month.getYear();
         monthNum--;
-        if(monthNum < 0) {
+        if (monthNum < 0) {
             monthNum = 11;
             year = year - 1; // TODO should we look at a earliest year????
         }
 
-        Month prevMonth = ExpenseListProviderHelper.getMonth(activity, monthNum, year);
+        Month newMonth = new Month(-1, monthNum, year, -1);
+        return newMonth;
+    }
+
+    /**
+     * Decrement the month and return the new month from the database.
+     * @param activity The activity.
+     * @param month The month to decrement.
+     * @return The new month.
+     */
+    public static Month decMonth(Activity activity, Month month) {
+        Month newMonth = decMonth(month);
+
+        Month prevMonth = ExpenseListProviderHelper.getMonth(activity, newMonth.getMonth(), newMonth.getYear());
         if(prevMonth != null) {
             return prevMonth;
         } else {
@@ -191,4 +223,79 @@ public class ExpenseListProviderHelper {
 
         return catVersion;
     }
+
+    public static Income getIncomeForMonth(Activity activity, long monthId) {
+        Income income = null;
+        String[] projection = new String[]{
+                ExpenseListContract.IncomeEntry.TABLE_NAME + "." + ExpenseListContract.IncomeEntry._ID,
+                ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID,
+                ExpenseListContract.IncomeEntry.COLUMN_CAT_ID,
+                ExpenseListContract.IncomeEntry.COLUMN_AMOUNT};
+        String selection = ExpenseListContract.IncomeEntry.TABLE_NAME + "." +
+                ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID + " = ?";
+        String[] selectionArgs = new String[]{Long.toString(monthId)};
+
+        Uri uri = ExpenseListContract.IncomeEntry.CONTENT_URI;
+        uri = Uri.withAppendedPath(uri, ExpenseListContract.PATH_MONTH);
+        uri = Uri.withAppendedPath(uri, "" + monthId);
+
+        Cursor cursor = activity.getContentResolver().query(uri, projection, selection, selectionArgs, null);
+        if(cursor.moveToFirst()) {
+            int idIdx = cursor.getColumnIndex(ExpenseListContract.IncomeEntry._ID);
+            int monthIdx = cursor.getColumnIndex(ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID);
+            int amountIdx = cursor.getColumnIndex(ExpenseListContract.IncomeEntry.COLUMN_AMOUNT);
+            int catIdx = cursor.getColumnIndex(ExpenseListContract.IncomeEntry.COLUMN_CAT_ID);
+
+            income = new Income(cursor.getLong(idIdx), cursor.getLong(catIdx),
+                    cursor.getLong(monthIdx), cursor.getFloat(amountIdx));
+        }
+
+        return income;
+    }
+
+    public static Income addIncome(Activity activity, long monthId, float amount) {
+        int catVersion = -1;
+        ContentValues values;
+        Uri uri;
+
+        values = new ContentValues();
+        values.put(ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID, monthId);
+        values.put(ExpenseListContract.IncomeEntry.COLUMN_AMOUNT, amount);
+        values.put(ExpenseListContract.IncomeEntry.COLUMN_CAT_ID, catVersion);
+        uri = activity.getContentResolver().insert(ExpenseListContract.IncomeEntry.CONTENT_URI, values);
+        long id = Long.parseLong(uri.getLastPathSegment());
+        Income income = new Income(id, catVersion, monthId, amount);
+
+        return income;
+    }
+
+    public static List<Income> getAllIncomes(Activity activity) {
+
+        List<Income> list = new ArrayList<Income>();
+        String[] projection = new String[]{
+                ExpenseListContract.IncomeEntry.TABLE_NAME + "." + ExpenseListContract.IncomeEntry._ID,
+                ExpenseListContract.IncomeEntry.COLUMN_CAT_ID,
+                ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID,
+                ExpenseListContract.IncomeEntry.COLUMN_AMOUNT};
+
+        Uri uri = ExpenseListContract.IncomeEntry.CONTENT_URI;
+
+        Cursor cursor = activity.getContentResolver().query(uri, projection, null, null, null);
+
+        cursor.moveToPosition(-1);
+        while(cursor.moveToNext()) {
+            int idIdx = cursor.getColumnIndex(ExpenseListContract.IncomeEntry._ID);
+            int catIdx = cursor.getColumnIndex(ExpenseListContract.IncomeEntry.COLUMN_CAT_ID);
+            int monthIdx = cursor.getColumnIndex(ExpenseListContract.IncomeEntry.COLUMN_MONTH_ID);
+            int amountIdx = cursor.getColumnIndex(ExpenseListContract.IncomeEntry.COLUMN_AMOUNT);
+
+            Income cat = new Income(cursor.getLong(idIdx), cursor.getLong(catIdx), cursor.getLong(monthIdx), cursor.getFloat(amountIdx));
+            list.add(cat);
+        }
+
+        cursor.close();
+
+        return list;
+    }
+
 }
